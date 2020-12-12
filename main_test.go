@@ -55,21 +55,21 @@ func TestMyApi(t *testing.T) {
 				},
 			},
 		},
-		//Case{ // успешный запрос - POST
-		//	Path:   ApiUserProfile,
-		//	Method: http.MethodPost,
-		//	Query:  "login=rvasily",
-		//	Status: http.StatusOK,
-		//	Result: CR{
-		//		"error": "",
-		//		"response": CR{
-		//			"id":        42,
-		//			"login":     "rvasily",
-		//			"full_name": "Vasily Romanov",
-		//			"status":    20,
-		//		},
-		//	},
-		//},
+		Case{ // успешный запрос - POST
+			Path:   ApiUserProfile,
+			Method: http.MethodPost,
+			Query:  "login=rvasily",
+			Status: http.StatusOK,
+			Result: CR{
+				"error": "",
+				"response": CR{
+					"id":        42,
+					"login":     "rvasily",
+					"full_name": "Vasily Romanov",
+					"status":    20,
+				},
+			},
+		},
 		//Case{ // сработала валидация - логин не должен быть пустым
 		//	Path:   ApiUserProfile,
 		//	Query:  "",
@@ -78,31 +78,31 @@ func TestMyApi(t *testing.T) {
 		//		"error": "login must me not empty",
 		//	},
 		//},
-		//Case{ // получили ошибку общего назначения - ваш код сам подставил 500
-		//	Path:   ApiUserProfile,
-		//	Query:  "login=bad_user",
-		//	Status: http.StatusInternalServerError,
-		//	Result: CR{
-		//		"error": "bad user",
-		//	},
-		//},
-		//Case{ // получили специализированную ошибку - ваш код поставил статус 404 оттуда
-		//	Path:   ApiUserProfile,
-		//	Query:  "login=not_exist_user",
-		//	Status: http.StatusNotFound,
-		//	Result: CR{
-		//		"error": "user not exist",
-		//	},
-		//},
-		//// ------
-		//Case{ // это должен ответить ваш ServeHTTP - если ему пришло что-то неизвестное (например когда он обрабатывает /user/)
-		//	Path:   "/user/unknown",
-		//	Query:  "login=not_exist_user",
-		//	Status: http.StatusNotFound,
-		//	Result: CR{
-		//		"error": "unknown method",
-		//	},
-		//},
+		Case{ // получили ошибку общего назначения - ваш код сам подставил 500
+			Path:   ApiUserProfile,
+			Query:  "login=bad_user",
+			Status: http.StatusInternalServerError,
+			Result: CR{
+				"error": "bad user",
+			},
+		},
+		Case{ // получили специализированную ошибку - ваш код поставил статус 404 оттуда
+			Path:   ApiUserProfile,
+			Query:  "login=not_exist_user",
+			Status: http.StatusNotFound,
+			Result: CR{
+				"error": "user not exist",
+			},
+		},
+		// ------
+		Case{ // это должен ответить ваш ServeHTTP - если ему пришло что-то неизвестное (например когда он обрабатывает /user/)
+			Path:   "/user/unknown",
+			Query:  "login=not_exist_user",
+			Status: http.StatusNotFound,
+			Result: CR{
+				"error": "unknown method",
+			},
+		},
 		//// ------
 		//Case{ // создаём юзера
 		//	Path:   ApiUserCreate,
