@@ -1,39 +1,76 @@
-// go build handlers_gen/* && ./codegen.exe api.go  api_handler.go
+// go build handlers_gen/* && ./codegen api.go  api_handler.go
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"log"
 	"os"
-	"reflect"
 	"strings"
-	//"text/template"
+	"text/template"
 )
 
-//type tpl struct {
-//	FieldName string
-//}
-//
-//var (
-//	intTpl = template.Must(template.New("intTpl").Parse(`
-//	// {{.FieldName}}
-//	var {{.FieldName}}Raw uint32
-//	binary.Read(r, binary.LittleEndian, &{{.FieldName}}Raw)
-//	in.{{.FieldName}} = int({{.FieldName}}Raw)
-//`))
-//
-//	strTpl = template.Must(template.New("strTpl").Parse(`
-//	// {{.FieldName}}
-//	var {{.FieldName}}LenRaw uint32
-//	binary.Read(r, binary.LittleEndian, &{{.FieldName}}LenRaw)
-//	{{.FieldName}}Raw := make([]byte, {{.FieldName}}LenRaw)
-//	binary.Read(r, binary.LittleEndian, &{{.FieldName}}Raw)
-//	in.{{.FieldName}} = string({{.FieldName}}Raw)
-//`))
-//)
+type tplFuncParams struct {
+	Receiver          string
+	HandlerMethodName string
+}
+
+type serveHttpParams struct {
+	Api
+	HandlerMethodName string
+}
+
+type Api struct {
+	Url    string `json:"url"`
+	Auth   bool   `json:"auth"`
+	Method string `json:"method"`
+}
+
+var (
+	funcTpl = template.Must(template.New("funcTpl").Parse(`
+func (srv *{{.Receiver}}) {{.HandlerMethodName}}(w http.ResponseWriter, r *http.Request) {
+}
+`))
+
+	apiResponseTpl = template.Must(template.New("serveHttpTpl").Parse(`
+type ApiResponse struct {
+	Error    string       ` + "`json:\"error\"`" + `
+	Response *interface{} ` + "`json:\"response,omitempty\"`" + `
+}
+
+func makeOutput(w http.ResponseWriter, body interface{}, status int) {
+	w.WriteHeader(status)
+	result, err := json.Marshal(body)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	_, err_write := io.WriteString(w, string(result))
+	if err_write != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+}
+`))
+
+	serveHttpTpl = template.Must(template.New("serveHttpTpl").Parse(`
+func (srv *{{.Receiver}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	{{range .Apis}}
+	case "{{.Url}}":
+		srv.{{.HandlerMethodName}}(w, r)
+	{{end}}
+	default:
+		makeOutput(w, ApiResponse{
+			Error: "unknown method",
+		}, http.StatusNotFound)
+	}
+}
+`))
+)
 
 func main() {
 	fset := token.NewFileSet()
@@ -46,79 +83,172 @@ func main() {
 
 	fmt.Fprintln(out, `package `+node.Name.Name)
 	fmt.Fprintln(out) // empty line
-	fmt.Fprintln(out, `import "encoding/binary"`)
-	fmt.Fprintln(out, `import "bytes"`)
+	fmt.Fprintln(out, `import "net/http"`)
+	fmt.Fprintln(out, `import "encoding/json"`)
+	fmt.Fprintln(out, `import "io"`)
 	fmt.Fprintln(out) // empty line
 
+	//apis := []serveHttpParams{}
+	apisByReceiver := make(map[string][]serveHttpParams)
 	for _, f := range node.Decls {
-		g, ok := f.(*ast.GenDecl)
+		func_decl, ok := f.(*ast.FuncDecl)
 		if !ok {
-			fmt.Printf("SKIP %T is not *ast.GenDecl\n", f)
+			fmt.Printf("SKIP %T is not *ast.FuncDecl\n", f)
 			continue
 		}
-	SPECS_LOOP:
-		for _, spec := range g.Specs {
-			currType, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				fmt.Printf("SKIP %T is not ast.TypeSpec\n", spec)
-				continue
-			}
+		name := func_decl.Name.Name
 
-			currStruct, ok := currType.Type.(*ast.StructType)
-			if !ok {
-				fmt.Printf("SKIP %T is not ast.StructType\n", currStruct)
-				continue
-			}
-
-			if g.Doc == nil {
-				fmt.Printf("SKIP struct %#v doesnt have comments\n", currType.Name.Name)
-				continue
-			}
-
-			needCodegen := false
-			for _, comment := range g.Doc.List {
-				needCodegen = needCodegen || strings.HasPrefix(comment.Text, "// cgen: binpack")
-			}
-			if !needCodegen {
-				fmt.Printf("SKIP struct %#v doesnt have cgen mark\n", currType.Name.Name)
-				continue SPECS_LOOP
-			}
-
-			fmt.Printf("process struct %s\n", currType.Name.Name)
-			fmt.Printf("\tgenerating Unpack method\n")
-
-			fmt.Fprintln(out, "func (in *"+currType.Name.Name+") Unpack(data []byte) error {")
-			fmt.Fprintln(out, "	r := bytes.NewReader(data)")
-
-		FIELDS_LOOP:
-			for _, field := range currStruct.Fields.List {
-
-				if field.Tag != nil {
-					tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
-					if tag.Get("cgen") == "-" {
-						continue FIELDS_LOOP
-					}
-				}
-
-				fieldName := field.Names[0].Name
-				fileType := field.Type.(*ast.Ident).Name
-
-				fmt.Printf("\tgenerating code for field %s.%s\n", currType.Name.Name, fieldName)
-
-				switch fileType {
-				case "int":
-					intTpl.Execute(out, tpl{fieldName})
-				case "string":
-					strTpl.Execute(out, tpl{fieldName})
-				default:
-					log.Fatalln("unsupported", fileType)
-				}
-			}
-
-			fmt.Fprintln(out, "	return nil")
-			fmt.Fprintln(out, "}") // end of Unpack func
-			fmt.Fprintln(out)      // empty line
-
+		if func_decl.Doc == nil {
+			fmt.Printf("SKIP func %s doesnt have comments\n", name)
+			continue
 		}
+
+		needCodegen := false
+		var api Api
+		for _, comment := range func_decl.Doc.List {
+			text := comment.Text
+			prefix := "// apigen:api "
+			hasPrefix := strings.HasPrefix(text, prefix)
+			if hasPrefix {
+				jsonStr := strings.ReplaceAll(text, prefix, "")
+				//api = new(Api)
+				err := json.Unmarshal([]byte(jsonStr), &api)
+				if err != nil {
+					log.Fatalln("Can't parse method comment")
+					return
+				}
+				needCodegen = true
+				break
+			}
+		}
+
+		if !needCodegen {
+			fmt.Printf("SKIP func %s doesnt have apigen:api mark\n", name)
+			continue
+		}
+
+		fmt.Printf("Processing func name %s\n", name)
+		fmt.Printf("\tgenerating handle method\n")
+
+		var receiver_name string
+		for _, field := range func_decl.Recv.List {
+			receiver_type := field.Type.(*ast.StarExpr)
+			receiver_name = receiver_type.X.(*ast.Ident).Name
+			//switch field.(type) {
+			//case ast.StarExpr:
+			//
+			//	break
+			//}
+		}
+
+		handlerMethodName := "handle" + name
+
+		err := funcTpl.Execute(out, tplFuncParams{
+			Receiver:          receiver_name,
+			HandlerMethodName: handlerMethodName,
+		})
+
+		if err != nil {
+			log.Fatalln("Can't generate api handler for func ", name)
+		}
+
+		apis, ok := apisByReceiver[receiver_name]
+		if !ok {
+			apis = []serveHttpParams{}
+		}
+		apis = append(apis, serveHttpParams{
+			Api:               api,
+			HandlerMethodName: handlerMethodName,
+		})
+		apisByReceiver[receiver_name] = apis
+		//SPECS_LOOP:
+		//	for _, spec := range func_decl.Specs {
+		//		currType, ok := spec.(*ast.TypeSpec)
+		//		if !ok {
+		//			fmt.Printf("SKIP %T is not ast.TypeSpec\n", spec)
+		//			continue
+		//		}
+		//
+		//		currStruct, ok := currType.Type.(*ast.StructType)
+		//		if !ok {
+		//			fmt.Printf("SKIP %T is not ast.StructType\n", currStruct)
+		//			continue
+		//		}
+		//
+		//		if g.Doc == nil {
+		//			fmt.Printf("SKIP struct %#v doesnt have comments\n", currType.Name.Name)
+		//			continue
+		//		}
+		//
+		//		needCodegen := false
+		//		for _, comment := range g.Doc.List {
+		//			needCodegen = needCodegen || strings.HasPrefix(comment.Text, "// cgen: binpack")
+		//		}
+		//		if !needCodegen {
+		//			fmt.Printf("SKIP struct %#v doesnt have cgen mark\n", currType.Name.Name)
+		//			continue SPECS_LOOP
+		//		}
+		//
+		//		fmt.Printf("process struct %s\n", currType.Name.Name)
+		//		fmt.Printf("\tgenerating Unpack method\n")
+		//
+		//		fmt.Fprintln(out, "func (in *"+currType.Name.Name+") Unpack(data []byte) error {")
+		//		fmt.Fprintln(out, "	r := bytes.NewReader(data)")
+		//
+		//	FIELDS_LOOP:
+		//		for _, field := range currStruct.Fields.List {
+		//
+		//			if field.Tag != nil {
+		//				tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
+		//				if tag.Get("cgen") == "-" {
+		//					continue FIELDS_LOOP
+		//				}
+		//			}
+		//
+		//			fieldName := field.Names[0].Name
+		//			fileType := field.Type.(*ast.Ident).Name
+		//
+		//			fmt.Printf("\tgenerating code for field %s.%s\n", currType.Name.Name, fieldName)
+		//
+		//			switch fileType {
+		//			case "int":
+		//				intTpl.Execute(out, tpl{fieldName})
+		//			case "string":
+		//				strTpl.Execute(out, tpl{fieldName})
+		//			default:
+		//				log.Fatalln("unsupported", fileType)
+		//			}
+		//		}
+		//
+		//		fmt.Fprintln(out, "	return nil")
+		//		fmt.Fprintln(out, "}") // end of Unpack func
+		//		fmt.Fprintln(out)      // empty line
+		//
+		//	}
+	}
+
+	for receiver := range apisByReceiver {
+
+		fmt.Printf("Generating ServeHTTP func for receiver %s\n", receiver)
+
+		err = serveHttpTpl.Execute(out,
+			struct {
+				Receiver string
+				Apis     []serveHttpParams
+			}{
+				Receiver: receiver,
+				Apis:     apisByReceiver[receiver],
+			})
+
+		if err != nil {
+			log.Fatalln("Can't generate serve http")
+		}
+	}
+
+	fmt.Printf("Generating ApiResponse struct\n")
+
+	err = apiResponseTpl.Execute(out, nil)
+	if err != nil {
+		log.Fatalln("Can't generate ApiResponse")
 	}
 }

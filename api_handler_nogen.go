@@ -29,6 +29,13 @@ func (srv *MyApi) handlerProfile(w http.ResponseWriter, r *http.Request) {
 	//	http.Error(w, "bad method", http.StatusNotAcceptable)
 	//	return
 	//}
+	check_auth := true
+	if check_auth && r.Header.Get("X-Auth") != "100500" {
+		makeOutput(w, ApiResponse{
+			Error: "unauthorized",
+		}, http.StatusForbidden)
+		return
+	}
 	// заполнение структуры params
 	params := ProfileParams{
 		Login: r.FormValue("login"),
