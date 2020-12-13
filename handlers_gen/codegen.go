@@ -16,6 +16,9 @@ import (
 type tplFuncParams struct {
 	Receiver          string
 	HandlerMethodName string
+	MethodName        string
+	InputParamName    string
+	Api
 }
 
 type serveHttpParams struct {
@@ -32,6 +35,51 @@ type Api struct {
 var (
 	funcTpl = template.Must(template.New("funcTpl").Parse(`
 func (srv *{{.Receiver}}) {{.HandlerMethodName}}(w http.ResponseWriter, r *http.Request) {
+	{{if .Auth }}
+	if r.Header.Get("X-Auth") != "100500" {
+		makeOutput(w, ApiResponse{
+			Error: "unauthorized",
+		}, http.StatusForbidden)
+		return
+	}
+	{{end}}
+
+	{{if .Method }}
+	if r.Method != "{{.Method}}" {
+		makeOutput(w, ApiResponse{
+			Error: "bad method",
+		}, http.StatusNotAcceptable)
+		return
+	}
+	{{end}}
+	
+	// заполнение структуры params
+	params := {{.InputParamName}}{
+		Login: r.FormValue("login"),
+	}
+	// валидирование параметров
+	ctx := r.Context()
+	var res interface{}
+	res, err := srv.{{.MethodName}}(ctx, params)
+	// прочие обработки
+	if err != nil {
+		fmt.Printf("error happend: %+v\n", err)
+		switch err.(type) {
+		case ApiError:
+			err := err.(ApiError)
+			makeOutput(w, ApiResponse{
+				Error: err.Err.Error(),
+			}, err.HTTPStatus)
+		default:
+			makeOutput(w, ApiResponse{
+				Error: err.Error(),
+			}, http.StatusInternalServerError)
+		}
+		return
+	}
+	makeOutput(w, ApiResponse{
+		Response: &res,
+	}, http.StatusOK)
 }
 `))
 
@@ -86,6 +134,7 @@ func main() {
 	fmt.Fprintln(out, `import "net/http"`)
 	fmt.Fprintln(out, `import "encoding/json"`)
 	fmt.Fprintln(out, `import "io"`)
+	fmt.Fprintln(out, `import "fmt"`)
 	fmt.Fprintln(out) // empty line
 
 	//apis := []serveHttpParams{}
@@ -117,6 +166,9 @@ func main() {
 					log.Fatalln("Can't parse method comment")
 					return
 				}
+				//if api.Method == "" {
+				//	api.Method = http.MethodGet
+				//}
 				needCodegen = true
 				break
 			}
@@ -141,11 +193,16 @@ func main() {
 			//}
 		}
 
+		inputParamName := func_decl.Type.Params.List[1].Type.(*ast.Ident).Name
+
 		handlerMethodName := "handle" + name
 
 		err := funcTpl.Execute(out, tplFuncParams{
 			Receiver:          receiver_name,
 			HandlerMethodName: handlerMethodName,
+			MethodName:        name,
+			InputParamName:    inputParamName,
+			Api:               api,
 		})
 
 		if err != nil {

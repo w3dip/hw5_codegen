@@ -142,16 +142,16 @@ func TestMyApi(t *testing.T) {
 		//		"error": "bad method",
 		//	},
 		//},
-		//Case{
-		//	Path:   ApiUserCreate,
-		//	Method: http.MethodPost,
-		//	Query:  "any_params=123",
-		//	Status: http.StatusForbidden,
-		//	Auth:   false,
-		//	Result: CR{
-		//		"error": "unauthorized",
-		//	},
-		//},
+		Case{
+			Path:   ApiUserCreate,
+			Method: http.MethodPost,
+			Query:  "any_params=123",
+			Status: http.StatusForbidden,
+			Auth:   false,
+			Result: CR{
+				"error": "unauthorized",
+			},
+		},
 		//Case{
 		//	Path:   ApiUserCreate,
 		//	Method: http.MethodPost,
@@ -235,16 +235,16 @@ func TestMyApi(t *testing.T) {
 		//		},
 		//	},
 		//},
-		//Case{ // обрабатываем неизвестную ошибку
-		//	Path:   ApiUserCreate,
-		//	Method: http.MethodPost,
-		//	Query:  "login=bad_username&age=32&full_name=Ivan_Ivanov",
-		//	Status: http.StatusInternalServerError,
-		//	Auth:   true,
-		//	Result: CR{
-		//		"error": "bad user",
-		//	},
-		//},
+		Case{ // обрабатываем неизвестную ошибку
+			Path:   ApiUserCreate,
+			Method: http.MethodPost,
+			Query:  "login=bad_username&age=32&full_name=Ivan_Ivanov",
+			Status: http.StatusInternalServerError,
+			Auth:   true,
+			Result: CR{
+				"error": "bad user",
+			},
+		},
 	}
 
 	runTests(t, ts, cases)
