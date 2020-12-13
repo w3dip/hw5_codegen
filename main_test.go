@@ -103,45 +103,45 @@ func TestMyApi(t *testing.T) {
 				"error": "unknown method",
 			},
 		},
-		//// ------
-		//Case{ // создаём юзера
-		//	Path:   ApiUserCreate,
-		//	Method: http.MethodPost,
-		//	Query:  "login=mr.moderator&age=32&status=moderator&full_name=Ivan_Ivanov",
-		//	Status: http.StatusOK,
-		//	Auth:   true,
-		//	Result: CR{
-		//		"error": "",
-		//		"response": CR{
-		//			"id": 43,
-		//		},
-		//	},
-		//},
-		//Case{ // юзер действительно создался
-		//	Path:   ApiUserProfile,
-		//	Query:  "login=mr.moderator",
-		//	Status: http.StatusOK,
-		//	Result: CR{
-		//		"error": "",
-		//		"response": CR{
-		//			"id":        43,
-		//			"login":     "mr.moderator",
-		//			"full_name": "Ivan_Ivanov",
-		//			"status":    10,
-		//		},
-		//	},
-		//},
-		//
-		//Case{ // только POST
-		//	Path:   ApiUserCreate,
-		//	Method: http.MethodGet,
-		//	Query:  "login=mr.moderator&age=32&status=moderator&full_name=GetMethod",
-		//	Status: http.StatusNotAcceptable,
-		//	Auth:   true,
-		//	Result: CR{
-		//		"error": "bad method",
-		//	},
-		//},
+		// ------
+		Case{ // создаём юзера
+			Path:   ApiUserCreate,
+			Method: http.MethodPost,
+			Query:  "login=mr.moderator&age=32&status=moderator&full_name=Ivan_Ivanov",
+			Status: http.StatusOK,
+			Auth:   true,
+			Result: CR{
+				"error": "",
+				"response": CR{
+					"id": 43,
+				},
+			},
+		},
+		Case{ // юзер действительно создался
+			Path:   ApiUserProfile,
+			Query:  "login=mr.moderator",
+			Status: http.StatusOK,
+			Result: CR{
+				"error": "",
+				"response": CR{
+					"id":        43,
+					"login":     "mr.moderator",
+					"full_name": "Ivan_Ivanov",
+					"status":    10,
+				},
+			},
+		},
+
+		Case{ // только POST
+			Path:   ApiUserCreate,
+			Method: http.MethodGet,
+			Query:  "login=mr.moderator&age=32&status=moderator&full_name=GetMethod",
+			Status: http.StatusNotAcceptable,
+			Auth:   true,
+			Result: CR{
+				"error": "bad method",
+			},
+		},
 		Case{
 			Path:   ApiUserCreate,
 			Method: http.MethodPost,
@@ -152,16 +152,16 @@ func TestMyApi(t *testing.T) {
 				"error": "unauthorized",
 			},
 		},
-		//Case{
-		//	Path:   ApiUserCreate,
-		//	Method: http.MethodPost,
-		//	Query:  "login=mr.moderator&age=32&status=moderator&full_name=New_Ivan",
-		//	Status: http.StatusConflict,
-		//	Auth:   true,
-		//	Result: CR{
-		//		"error": "user mr.moderator exist",
-		//	},
-		//},
+		Case{
+			Path:   ApiUserCreate,
+			Method: http.MethodPost,
+			Query:  "login=mr.moderator&age=32&status=moderator&full_name=New_Ivan",
+			Status: http.StatusConflict,
+			Auth:   true,
+			Result: CR{
+				"error": "user mr.moderator exist",
+			},
+		},
 		//Case{
 		//	Path:   ApiUserCreate,
 		//	Method: http.MethodPost,

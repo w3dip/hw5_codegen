@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"log"
 	"os"
+	"reflect"
 	"strings"
 	"text/template"
 )
@@ -18,7 +19,14 @@ type tplFuncParams struct {
 	HandlerMethodName string
 	MethodName        string
 	InputParamName    string
+	Params            []param
 	Api
+}
+
+type param struct {
+	StructFieldName string
+	FieldName       string
+	FieldType       string
 }
 
 type serveHttpParams struct {
@@ -54,8 +62,17 @@ func (srv *{{.Receiver}}) {{.HandlerMethodName}}(w http.ResponseWriter, r *http.
 	{{end}}
 	
 	// заполнение структуры params
+	{{ range .Params }}
+		{{if eq .FieldType "int" }}
+			{{ .FieldName }}, _ := strconv.Atoi(r.FormValue("{{ .FieldName }}"))
+		{{else if eq .FieldType "string" }}
+			{{ .FieldName }} := r.FormValue("{{ .FieldName }}")
+		{{ end }}
+	{{ end }}
 	params := {{.InputParamName}}{
-		Login: r.FormValue("login"),
+		{{ range .Params }}
+		{{ .StructFieldName }}: {{ .FieldName }},
+		{{ end }}
 	}
 	// валидирование параметров
 	ctx := r.Context()
@@ -135,6 +152,7 @@ func main() {
 	fmt.Fprintln(out, `import "encoding/json"`)
 	fmt.Fprintln(out, `import "io"`)
 	fmt.Fprintln(out, `import "fmt"`)
+	fmt.Fprintln(out, `import "strconv"`)
 	fmt.Fprintln(out) // empty line
 
 	//apis := []serveHttpParams{}
@@ -195,6 +213,71 @@ func main() {
 
 		inputParamName := func_decl.Type.Params.List[1].Type.(*ast.Ident).Name
 
+		params := make([]param, 0)
+
+		for _, decl := range node.Decls {
+			g, ok := decl.(*ast.GenDecl)
+			if !ok {
+				fmt.Printf("SKIP %T is not *ast.GenDecl\n", f)
+				continue
+			}
+			//SPECS_LOOP:
+			for _, spec := range g.Specs {
+				currType, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					fmt.Printf("SKIP %T is not ast.TypeSpec\n", spec)
+					continue
+				}
+
+				structName := currType.Name.Name
+				if structName != inputParamName {
+					fmt.Printf("SKIP %s because it is not that struct\n", structName)
+					continue
+				}
+
+				currStruct, ok := currType.Type.(*ast.StructType)
+				if !ok {
+					fmt.Printf("SKIP %T is not ast.StructType\n", currStruct)
+					continue
+				}
+
+				var fieldName string
+				//FIELDS_LOOP:
+				for _, field := range currStruct.Fields.List {
+					structFieldName := field.Names[0].Name
+					fieldName = strings.ToLower(structFieldName)
+					fileType := field.Type.(*ast.Ident).Name
+					if field.Tag != nil {
+						tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
+						tagValue := tag.Get("apivalidator")
+						if strings.Contains(tagValue, "paramname=") {
+							fieldName = strings.ReplaceAll(tagValue, "paramname=", "")
+						}
+					}
+					params = append(params, param{
+						StructFieldName: structFieldName,
+						FieldName:       fieldName,
+						FieldType:       fileType})
+				}
+				//
+				//			fieldName := field.Names[0].Name
+				//			fileType := field.Type.(*ast.Ident).Name
+				//
+				//			fmt.Printf("\tgenerating code for field %s.%s\n", currType.Name.Name, fieldName)
+				//
+				//			switch fileType {
+				//			case "int":
+				//				intTpl.Execute(out, tpl{fieldName})
+				//			case "string":
+				//				strTpl.Execute(out, tpl{fieldName})
+				//			default:
+				//				log.Fatalln("unsupported", fileType)
+				//			}
+				//		}
+				break
+			}
+		}
+
 		handlerMethodName := "handle" + name
 
 		err := funcTpl.Execute(out, tplFuncParams{
@@ -202,6 +285,7 @@ func main() {
 			HandlerMethodName: handlerMethodName,
 			MethodName:        name,
 			InputParamName:    inputParamName,
+			Params:            params,
 			Api:               api,
 		})
 
@@ -218,70 +302,6 @@ func main() {
 			HandlerMethodName: handlerMethodName,
 		})
 		apisByReceiver[receiver_name] = apis
-		//SPECS_LOOP:
-		//	for _, spec := range func_decl.Specs {
-		//		currType, ok := spec.(*ast.TypeSpec)
-		//		if !ok {
-		//			fmt.Printf("SKIP %T is not ast.TypeSpec\n", spec)
-		//			continue
-		//		}
-		//
-		//		currStruct, ok := currType.Type.(*ast.StructType)
-		//		if !ok {
-		//			fmt.Printf("SKIP %T is not ast.StructType\n", currStruct)
-		//			continue
-		//		}
-		//
-		//		if g.Doc == nil {
-		//			fmt.Printf("SKIP struct %#v doesnt have comments\n", currType.Name.Name)
-		//			continue
-		//		}
-		//
-		//		needCodegen := false
-		//		for _, comment := range g.Doc.List {
-		//			needCodegen = needCodegen || strings.HasPrefix(comment.Text, "// cgen: binpack")
-		//		}
-		//		if !needCodegen {
-		//			fmt.Printf("SKIP struct %#v doesnt have cgen mark\n", currType.Name.Name)
-		//			continue SPECS_LOOP
-		//		}
-		//
-		//		fmt.Printf("process struct %s\n", currType.Name.Name)
-		//		fmt.Printf("\tgenerating Unpack method\n")
-		//
-		//		fmt.Fprintln(out, "func (in *"+currType.Name.Name+") Unpack(data []byte) error {")
-		//		fmt.Fprintln(out, "	r := bytes.NewReader(data)")
-		//
-		//	FIELDS_LOOP:
-		//		for _, field := range currStruct.Fields.List {
-		//
-		//			if field.Tag != nil {
-		//				tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
-		//				if tag.Get("cgen") == "-" {
-		//					continue FIELDS_LOOP
-		//				}
-		//			}
-		//
-		//			fieldName := field.Names[0].Name
-		//			fileType := field.Type.(*ast.Ident).Name
-		//
-		//			fmt.Printf("\tgenerating code for field %s.%s\n", currType.Name.Name, fieldName)
-		//
-		//			switch fileType {
-		//			case "int":
-		//				intTpl.Execute(out, tpl{fieldName})
-		//			case "string":
-		//				strTpl.Execute(out, tpl{fieldName})
-		//			default:
-		//				log.Fatalln("unsupported", fileType)
-		//			}
-		//		}
-		//
-		//		fmt.Fprintln(out, "	return nil")
-		//		fmt.Fprintln(out, "}") // end of Unpack func
-		//		fmt.Fprintln(out)      // empty line
-		//
-		//	}
 	}
 
 	for receiver := range apisByReceiver {

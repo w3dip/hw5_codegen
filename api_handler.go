@@ -4,12 +4,17 @@ import "net/http"
 import "encoding/json"
 import "io"
 import "fmt"
+import "strconv"
 
 func (srv *MyApi) handleProfile(w http.ResponseWriter, r *http.Request) {
 
 	// заполнение структуры params
+
+	login := r.FormValue("login")
+
 	params := ProfileParams{
-		Login: r.FormValue("login"),
+
+		Login: login,
 	}
 	// валидирование параметров
 	ctx := r.Context()
@@ -53,8 +58,24 @@ func (srv *MyApi) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// заполнение структуры params
+
+	login := r.FormValue("login")
+
+	full_name := r.FormValue("full_name")
+
+	status := r.FormValue("status")
+
+	age, _ := strconv.Atoi(r.FormValue("age"))
+
 	params := CreateParams{
-		Login: r.FormValue("login"),
+
+		Login: login,
+
+		Name: full_name,
+
+		Status: status,
+
+		Age: age,
 	}
 	// валидирование параметров
 	ctx := r.Context()
@@ -98,8 +119,24 @@ func (srv *OtherApi) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// заполнение структуры params
+
+	username := r.FormValue("username")
+
+	account_name := r.FormValue("account_name")
+
+	class := r.FormValue("class")
+
+	level, _ := strconv.Atoi(r.FormValue("level"))
+
 	params := OtherCreateParams{
-		Login: r.FormValue("login"),
+
+		Username: username,
+
+		Name: account_name,
+
+		Class: class,
+
+		Level: level,
 	}
 	// валидирование параметров
 	ctx := r.Context()
@@ -126,8 +163,11 @@ func (srv *OtherApi) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusOK)
 }
 
-func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+
+	case "/user/profile":
+		srv.handleProfile(w, r)
 
 	case "/user/create":
 		srv.handleCreate(w, r)
@@ -139,11 +179,8 @@ func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-
-	case "/user/profile":
-		srv.handleProfile(w, r)
 
 	case "/user/create":
 		srv.handleCreate(w, r)
