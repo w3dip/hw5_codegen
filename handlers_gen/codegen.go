@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -27,6 +28,11 @@ type param struct {
 	StructFieldName string
 	FieldName       string
 	FieldType       string
+	IsRequired      bool
+	Min             int
+	Max             int
+	Default         string
+	AvailableValues []string
 }
 
 type serveHttpParams struct {
@@ -64,9 +70,81 @@ func (srv *{{.Receiver}}) {{.HandlerMethodName}}(w http.ResponseWriter, r *http.
 	// заполнение структуры params
 	{{ range .Params }}
 		{{if eq .FieldType "int" }}
-			{{ .FieldName }}, _ := strconv.Atoi(r.FormValue("{{ .FieldName }}"))
+			{{ .FieldName }}, convert_err := strconv.Atoi(r.FormValue("{{ .FieldName }}"))
+			if convert_err != nil {
+				makeOutput(w, ApiResponse{
+						Error: "{{.FieldName}} must be int",
+					}, http.StatusBadRequest)
+					return
+			}
+			{{if .IsRequired }}
+				if {{ .FieldName }} == 0 {
+					makeOutput(w, ApiResponse{
+						Error: "{{.FieldName}} must me not empty",
+					}, http.StatusBadRequest)
+					return
+				}
+			{{end}}
+			{{if ne .Min -1 }}
+				if {{ .FieldName }} < {{.Min}} {
+					makeOutput(w, ApiResponse{
+						Error: "{{.FieldName}} must be >= {{.Min}}",
+					}, http.StatusBadRequest)
+					return
+				}
+			{{end}}
+			{{if ne .Max -1 }}
+				if {{ .FieldName }} > {{.Max}} {
+					makeOutput(w, ApiResponse{
+						Error: "{{.FieldName}} must be <= {{.Max}}",
+					}, http.StatusBadRequest)
+					return
+				}
+			{{end}}
 		{{else if eq .FieldType "string" }}
 			{{ .FieldName }} := r.FormValue("{{ .FieldName }}")
+			{{if .IsRequired }}
+				if {{ .FieldName }} == "" {
+					makeOutput(w, ApiResponse{
+						Error: "{{.FieldName}} must me not empty",
+					}, http.StatusBadRequest)
+					return
+				}
+			{{end}}
+			{{if ne .Min -1 }}
+				if len({{ .FieldName }}) < {{.Min}} {
+					makeOutput(w, ApiResponse{
+						Error: "{{.FieldName}} len must be >= {{.Min}}",
+					}, http.StatusBadRequest)
+					return
+				}
+			{{end}}
+			{{if .AvailableValues }}
+				if {{ .FieldName }} != "" {
+					elem_values := make([]string, 0)
+					{{range $value := .AvailableValues}}
+						elem_values = append(elem_values, "{{$value}}")
+					{{end}}
+					found_elem := false
+					for _, elem := range elem_values {
+						if elem == {{ .FieldName }} {
+							found_elem = true
+						}
+					}
+					if !found_elem {
+						separated_str := strings.Join(elem_values, ", ")
+						makeOutput(w, ApiResponse{
+							Error: "{{.FieldName}} must be one of [" + separated_str + "]",
+						}, http.StatusBadRequest)
+						return
+					}
+				}
+			{{end}}
+			{{if ne .Default "" }}
+				if {{ .FieldName }} == "" {
+					{{ .FieldName }} = "{{.Default}}" 
+				}
+			{{end}}
 		{{ end }}
 	{{ end }}
 	params := {{.InputParamName}}{
@@ -153,6 +231,7 @@ func main() {
 	fmt.Fprintln(out, `import "io"`)
 	fmt.Fprintln(out, `import "fmt"`)
 	fmt.Fprintln(out, `import "strconv"`)
+	fmt.Fprintln(out, `import "strings"`)
 	fmt.Fprintln(out) // empty line
 
 	//apis := []serveHttpParams{}
@@ -242,22 +321,57 @@ func main() {
 				}
 
 				var fieldName string
+				var min int
+				var max int
+				var default_value string
 				//FIELDS_LOOP:
 				for _, field := range currStruct.Fields.List {
+					isRequired := false
+					min = -1
+					max = -1
+					default_value = ""
+					availableValues := make([]string, 0)
 					structFieldName := field.Names[0].Name
 					fieldName = strings.ToLower(structFieldName)
 					fileType := field.Type.(*ast.Ident).Name
 					if field.Tag != nil {
 						tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
 						tagValue := tag.Get("apivalidator")
-						if strings.Contains(tagValue, "paramname=") {
-							fieldName = strings.ReplaceAll(tagValue, "paramname=", "")
+
+						validators := strings.Split(tagValue, ",")
+						for _, validator := range validators {
+							if strings.Contains(validator, "paramname=") {
+								fieldName = strings.ReplaceAll(validator, "paramname=", "")
+							}
+							if strings.Contains(validator, "required") {
+								isRequired = true
+							}
+							if strings.Contains(validator, "min=") {
+								min, _ = strconv.Atoi(strings.ReplaceAll(validator, "min=", ""))
+							}
+							if strings.Contains(validator, "max=") {
+								max, _ = strconv.Atoi(strings.ReplaceAll(validator, "max=", ""))
+							}
+							if strings.Contains(validator, "default=") {
+								default_value = strings.ReplaceAll(validator, "default=", "")
+							}
+							if strings.Contains(validator, "enum=") {
+								enum := strings.ReplaceAll(validator, "enum=", "")
+								for _, availableValue := range strings.Split(enum, "|") {
+									availableValues = append(availableValues, availableValue)
+								}
+							}
 						}
 					}
 					params = append(params, param{
 						StructFieldName: structFieldName,
 						FieldName:       fieldName,
-						FieldType:       fileType})
+						FieldType:       fileType,
+						IsRequired:      isRequired,
+						Min:             min,
+						Max:             max,
+						Default:         default_value,
+						AvailableValues: availableValues})
 				}
 				//
 				//			fieldName := field.Names[0].Name
